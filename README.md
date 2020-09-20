@@ -25,3 +25,19 @@ You can signup and get the geoiplite city license for free from [maxmind.com](ma
 ```
 curl localhost:8080/health-check
 ```
+
+## Usage:
+
+```
+geoip [OPTIONS] --license <license>
+
+FLAGS:
+    -h, --help       Prints help information
+    -V, --version    Prints version information
+
+OPTIONS:
+    -a, --address <address>    ip address to bind to [default: 0.0.0.0]
+    -l, --license <license>    maxmind license (its free, but you have to sign up)
+    -t, --logtype <logtype>    sets the logging type [json/terminal] [default: terminal]
+    -p, --port <port>          http service port [true/false] [default: 8080]
+```
