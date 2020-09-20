@@ -39,5 +39,5 @@ OPTIONS:
     -a, --address <address>    ip address to bind to [default: 0.0.0.0]
     -l, --license <license>    maxmind license (its free, but you have to sign up)
     -t, --logtype <logtype>    sets the logging type [json/terminal] [default: terminal]
-    -p, --port <port>          http service port [true/false] [default: 8080]
+    -p, --port <port>          http service port [default: 8080]
 ```

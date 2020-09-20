@@ -142,7 +142,7 @@ async fn main() -> std::io::Result<()> {
                 .short("p")
                 .long("port")
                 .value_name("port")
-                .help("http service port [true/false]")
+                .help("http service port")
                 .required(false)
                 .takes_value(true)
                 .default_value("8080"),
