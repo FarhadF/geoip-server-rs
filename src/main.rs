@@ -1,5 +1,3 @@
-mod logging_middleware;
-
 use std::ffi::OsStr;
 use std::fs;
 use std::net::IpAddr;
@@ -26,9 +24,26 @@ struct HealthResponse {
     status: &'static str,
 }
 
+#[derive(Serialize)]
+struct GeoResponse<'a> {
+    pub ip: &'a str,
+    pub country_code: &'a str,
+    pub country_name: &'a str,
+    pub continent: &'a str,
+    pub continent_code: &'a str,
+    pub region_code: &'a str,
+    pub region_name: &'a str,
+    pub city: &'a str,
+    pub zip_code: &'a str,
+    pub time_zone: &'a str,
+    pub latitude: &'a f64,
+    pub longitude: &'a f64,
+    pub metro_code: &'a u16,
+}
+
 #[get("/health-check")]
 async fn health_check() -> impl Responder {
-    HttpResponse::Ok().json(&HealthResponse{status: "ok"})
+    HttpResponse::Ok().json(&HealthResponse { status: "ok" })
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -38,7 +53,6 @@ struct ResponseError {
 
 struct AppState {
     reader: Arc<Reader<Vec<u8>>>,
-    logger: Logger,
 }
 
 struct PartialRangeIter {
@@ -78,14 +92,12 @@ impl Iterator for PartialRangeIter {
     }
 }
 
-#[get("/geoip/{ip}")]
+#[get("/geoip/json/{ip}")]
 async fn get_ip(ip: web::Path<String>, state: web::Data<AppState>) -> impl Responder {
-    info!(state.logger, "handler");
     let ip: core::result::Result<IpAddr, std::net::AddrParseError> = (ip).parse();
     let ip: IpAddr = match ip {
         Ok(ip) => ip,
         Err(e) => {
-            error!(state.logger, "{}", e.to_string());
             return HttpResponse::InternalServerError().json(error_factory(e.to_string()));
         }
     };
@@ -94,12 +106,79 @@ async fn get_ip(ip: web::Path<String>, state: web::Data<AppState>) -> impl Respo
     let city = match city {
         Ok(city) => city,
         Err(e) => {
-            error!(state.logger, "{}", e.to_string());
             return HttpResponse::InternalServerError().json(error_factory(e.to_string()));
         }
     };
+    let region = city
+        .subdivisions
+        .as_ref()
+        .filter(|subdivs| !subdivs.is_empty())
+        .and_then(|subdivs| subdivs.get(0));
 
-    HttpResponse::Ok().json2(&city)
+    let resp = GeoResponse {
+        ip: &ip.to_string(),
+        country_code: city
+            .country
+            .as_ref()
+            .and_then(|country| country.iso_code)
+            .unwrap_or(""),
+        country_name: city
+            .country
+            .as_ref()
+            .and_then(|country| country.names.as_ref())
+            .and_then(|names| names.get("en"))
+            .unwrap_or(&""),
+        continent: city
+            .continent
+            .as_ref()
+            .and_then(|cont| cont.names.as_ref())
+            .and_then(|names| names.get("en"))
+            .unwrap_or(&""),
+        continent_code: city
+            .continent
+            .as_ref()
+            .and_then(|cont| cont.code)
+            .unwrap_or(""),
+        region_code: region
+            .and_then(|subdiv| subdiv.iso_code)
+            .unwrap_or(""),
+        region_name: region
+            .and_then(|subdiv| subdiv.names.as_ref())
+            .and_then(|names| names.get("en"))
+            .unwrap_or(&""),
+        city: city
+            .city
+            .as_ref()
+            .and_then(|city| city.names.as_ref())
+            .and_then(|names| names.get("en"))
+            .unwrap_or(&""),
+        zip_code: city
+            .postal
+            .as_ref()
+            .and_then(|postal| postal.code)
+            .unwrap_or(""),
+        time_zone: city
+            .location
+            .as_ref()
+            .and_then(|loc| loc.time_zone)
+            .unwrap_or(""),
+        latitude: city
+            .location
+            .as_ref()
+            .and_then(|loc| loc.longitude.as_ref())
+            .unwrap_or(&0.0),
+        longitude: city
+            .location
+            .as_ref()
+            .and_then(|loc| loc.latitude.as_ref())
+            .unwrap_or(&0.0),
+        metro_code: city
+            .location.
+            as_ref().
+            and_then(|loc| loc.metro_code.as_ref())
+            .unwrap_or(&0),
+    };
+    HttpResponse::Ok().json2(&resp)
 }
 
 #[actix_web::main]
@@ -187,18 +266,16 @@ async fn main() -> std::io::Result<()> {
     let r = Arc::new(reader);
     info!(log, "server starting");
     let server = HttpServer::new(move || {
-            App::new()
-                .data(AppState {
-                    reader: r.clone(),
-                    logger: log.clone(),
-                })
-                .service(get_ip)
-                .service(health_check)
-                .wrap(logging_middleware::Logging::new(log.clone()))
+        App::new()
+            .data(AppState {
+                reader: r.clone(),
+            })
+            .service(get_ip)
+            .service(health_check)
     });
     server.bind(format!("{}:{}", address, port))?
-    .run()
-    .await
+        .run()
+        .await
 }
 
 fn error_factory(e: String) -> ResponseError {
