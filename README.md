@@ -16,7 +16,7 @@ The binary will be located at ```./target/release/geoip-server-rs```
 ./target/release/geoip-server-rs -l <maxmind license token>
 ```
 ```
-curl localhost:8080/geoip/<someipaddress>
+curl localhost:8080/geoip/json/<someipaddress>
 ```
 
 You can signup and get the geoiplite city license for free from [maxmind.com](maxmind.com).
