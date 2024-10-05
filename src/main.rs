@@ -7,7 +7,7 @@ use std::sync::Arc;
 use actix_web::*;
 use anyhow::{anyhow, Result};
 use async_std::io::ErrorKind;
-use clap::{arg, Command};
+use clap::{Arg, Command};
 use flate2::read::GzDecoder;
 use maxminddb::{MaxMindDBError, Reader};
 use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
@@ -186,17 +186,42 @@ async fn main() -> std::io::Result<()> {
         .author("Farhad Farahi <farhad.farahi@gmail.com>")
         .about("geoip server")
         .args([
-            arg!(-l --license <Value> "sets the maxmind license key").required(true),
-            arg!(-a --address <Value> "sets the server address").required(true),
-            arg!(-p --port <Value> "sets the server port").required(true),
+            Arg::new("license")
+                .help("sets the maxmind license key")
+                .short('l')
+                .long("license")
+                .required_unless_present("license-file"),
+            Arg::new("license-file")
+                .help("sets the maxmind license key from a file")
+                .short('f')
+                .long("license-file")
+                .required_unless_present("license"),
+            Arg::new("address")
+                .help("sets the server address")
+                .short('a')
+                .long("address")
+                .default_value("0.0.0.0")
+                .required(false),
+            Arg::new("port")
+                .help("sets the server port")
+                .required(false)
+                .short('p')
+                .long("port")
+                .default_value("8080"),
         ])
         .get_matches();
 
-    let license: &String = matches.get_one("license").unwrap();
+    let license: String;
+    if matches.get_one::<String>("license").is_some() {
+        license = matches.get_one::<String>("license").unwrap().to_string();
+    } else {
+        let license_file: &String = matches.get_one("license-file").unwrap();
+        license = fs::read_to_string(license_file)?.trim().to_string();
+    }
     let address: &String = matches.get_one("address").unwrap();
     let port: &String = matches.get_one("port").unwrap();
     info!("Downloading the DB");
-    let result = download(license).await;
+    let result = download(&license).await;
     if let Err(e) = result {
         error!(error = e.to_string(), "error while downloading the db");
         return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
