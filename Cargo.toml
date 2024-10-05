@@ -7,19 +7,17 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-actix-web = "3.0"
-actix-service = "1.0"
-slog = "2.5.2"
-slog-term = "2.6.0"
-slog-async = "2.5.0"
-slog-json = "2.3.0"
-maxminddb = "0.21.0"
-serde = "1.0.114"
-reqwest = { version = "0.10", features = ["blocking", "json"] }
-async-std = "1.6.2"
-clap = "2.33.1"
-flate2 = "1.0.16"
-tar = "0.4.29"
-anyhow = "1.0.31"
-chrono = "0.4.13"
-futures = "0.3.5"
+actix-web = "4.9"
+actix-service = "2.0.2"
+tracing = "0.1.40"
+maxminddb = "0.24.0"
+serde = "1.0.210"
+reqwest = { version = "0.12.8", features = ["blocking", "json"] }
+async-std = "1.13.0"
+clap = "4.5.19"
+flate2 = "1.0.34"
+tar = "0.4.42"
+anyhow = "1.0.89"
+chrono = "0.4.38"
+futures = "0.3.31"
+tracing-subscriber = { version = "0.3.18", features = ["json"] }

@@ -7,17 +7,15 @@ use std::sync::Arc;
 use actix_web::*;
 use anyhow::{anyhow, Result};
 use async_std::io::ErrorKind;
-use clap::{App as clapApp, Arg};
+use clap::{arg, Command};
 use flate2::read::GzDecoder;
 use maxminddb::{MaxMindDBError, Reader};
 use reqwest::header::{HeaderValue, CONTENT_LENGTH, RANGE};
 use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
-use slog::Drain;
-use slog::*;
-use slog_async::Async;
 use std::io::copy;
 use tar::Archive;
+use tracing::{error, info};
 
 #[derive(Serialize)]
 struct HealthResponse {
@@ -139,9 +137,7 @@ async fn get_ip(ip: web::Path<String>, state: web::Data<AppState>) -> impl Respo
             .as_ref()
             .and_then(|cont| cont.code)
             .unwrap_or(""),
-        region_code: region
-            .and_then(|subdiv| subdiv.iso_code)
-            .unwrap_or(""),
+        region_code: region.and_then(|subdiv| subdiv.iso_code).unwrap_or(""),
         region_name: region
             .and_then(|subdiv| subdiv.names.as_ref())
             .and_then(|names| names.get("en"))
@@ -173,109 +169,53 @@ async fn get_ip(ip: web::Path<String>, state: web::Data<AppState>) -> impl Respo
             .and_then(|loc| loc.latitude.as_ref())
             .unwrap_or(&0.0),
         metro_code: city
-            .location.
-            as_ref().
-            and_then(|loc| loc.metro_code.as_ref())
+            .location
+            .as_ref()
+            .and_then(|loc| loc.metro_code.as_ref())
             .unwrap_or(&0),
     };
-    HttpResponse::Ok().json2(&resp)
+    HttpResponse::Ok().json(&resp)
 }
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    let matches = clapApp::new("Geoip Server")
+    tracing_subscriber::fmt().json().init();
+    let matches = Command::new("Geoip Server")
         .version("1.0")
         .author("Farhad Farahi <farhad.farahi@gmail.com>")
         .about("geoip server")
-        .arg(
-            Arg::with_name("license")
-                .short("l")
-                .long("license")
-                .value_name("license")
-                .help("maxmind license (its free, but you have to sign up)")
-                .required(true)
-                .takes_value(true),
-        )
-        .arg(
-            Arg::with_name("logtype")
-                .short("t")
-                .long("logtype")
-                .value_name("logtype")
-                .help("sets the logging type [json/terminal]")
-                .required(false)
-                .takes_value(true)
-                .default_value("terminal"),
-        )
-        .arg(
-            Arg::with_name("address")
-                .short("a")
-                .long("address")
-                .value_name("address")
-                .help("ip address to bind to")
-                .required(false)
-                .takes_value(true)
-                .default_value("0.0.0.0"),
-        )
-        .arg(
-            Arg::with_name("port")
-                .short("p")
-                .long("port")
-                .value_name("port")
-                .help("http service port")
-                .required(false)
-                .takes_value(true)
-                .default_value("8080"),
-        )
+        .args([
+            arg!(-l --license <Value> "sets the maxmind license key").required(true),
+            arg!(-a --address <Value> "sets the server address").required(true),
+            arg!(-p --port <Value> "sets the server port").required(true),
+        ])
         .get_matches();
-    let license = matches.value_of("license").unwrap();
-    let log_type = matches.value_of("logtype").unwrap();
-    let address = matches.value_of("address").unwrap();
-    let port = matches.value_of("port").unwrap();
-    let drain: Fuse<Async>;
-    if log_type == "terminal" {
-        let decorator = slog_term::TermDecorator::new().build();
-        let d = slog_term::FullFormat::new(decorator).build().fuse();
-        drain = slog_async::Async::new(d).build().fuse();
-    } else {
-        let d = slog_json::Json::new(std::io::stdout())
-            .set_pretty(false)
-            .add_default_keys()
-            .build()
-            .fuse();
-        drain = slog_async::Async::new(d).build().fuse();
-    }
-    let log = slog::Logger::root(
-        drain,
-        o!("location" => PushFnValue(|r: &Record, ser: PushFnValueSerializer| {
-            ser.emit(format_args!("{}:{}", r.file(), r.line()))
-        })),
-    );
-    info!(log, "{}", "Downloading the DB");
+
+    let license: &String = matches.get_one("license").unwrap();
+    let address: &String = matches.get_one("address").unwrap();
+    let port: &String = matches.get_one("port").unwrap();
+    info!("Downloading the DB");
     let result = download(license).await;
     if let Err(e) = result {
-        error!(log, "{:?}", e);
+        error!(error = e.to_string(), "error while downloading the db");
         return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
     }
-    info!(log, "{}", "extracting the archive");
-    let result = extract(log.clone()).await;
+    info!("extracting the archive");
+    let result = extract().await;
     if let Err(e) = result {
-        error!(log, "{:?}", e);
+        error!(error = e.to_string(), "error while extracting the archive");
         return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
     }
     let reader = maxminddb::Reader::open_readfile("GeoLite2-City.mmdb").unwrap();
     let r = Arc::new(reader);
-    info!(log, "server starting");
+    info!("server starting");
     let server = HttpServer::new(move || {
         App::new()
-            .data(AppState {
-                reader: r.clone(),
-            })
+            .app_data(AppState { reader: r.clone() })
             .service(get_ip)
             .service(health_check)
     });
-    server.bind(format!("{}:{}", address, port))?
-        .run()
-        .await
+    server.bind(format!("{}:{}", address, port))?.run().await
 }
 
 fn error_factory(e: String) -> ResponseError {
@@ -305,7 +245,7 @@ async fn download(license: &str) -> Result<()> {
     Ok(())
 }
 
-async fn extract(log: Logger) -> Result<()> {
+async fn extract() -> Result<()> {
     let path = "temparchive";
     let tar_gz = fs::File::open(path)?;
     let tar = GzDecoder::new(tar_gz);
@@ -327,7 +267,7 @@ async fn extract(log: Logger) -> Result<()> {
             let prefix = path.strip_prefix(first.to_owned() + "/")?.to_owned();
             entry.unpack(prefix)?;
             fs::remove_file("temparchive")?;
-            info!(log, "found the db");
+            info!("found the db");
         }
     }
     Ok(())
