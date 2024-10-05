@@ -49,6 +49,7 @@ struct ResponseError {
     error: String,
 }
 
+#[derive(Clone)]
 struct AppState {
     reader: Arc<Reader<Vec<u8>>>,
 }
@@ -211,7 +212,7 @@ async fn main() -> std::io::Result<()> {
     info!("server starting");
     let server = HttpServer::new(move || {
         App::new()
-            .app_data(AppState { reader: r.clone() })
+            .app_data(web::Data::new(AppState { reader: r.clone() }.clone()))
             .service(get_ip)
             .service(health_check)
     });
