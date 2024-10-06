@@ -183,18 +183,30 @@ async fn main() -> std::io::Result<()> {
     tracing_subscriber::fmt().json().init();
     let matches = Command::new("Geoip Server")
         .version("1.0")
-        .author("Farhad Farahi <farhad.farahi@gmail.com>")
+        .author(
+            "Farhad Farahi <farhad.f\
+        arahi@gmail.com>",
+        )
         .about("geoip server")
         .args([
             Arg::new("license")
                 .help("sets the maxmind license key")
                 .short('l')
                 .long("license")
-                .required_unless_present("license-file"),
+                .required_unless_present("license-file")
+                .required_unless_present("download"),
             Arg::new("license-file")
                 .help("sets the maxmind license key from a file")
                 .short('f')
                 .long("license-file")
+                .required_unless_present("license")
+                .required_unless_present("download"),
+            Arg::new("download")
+                .help("whether to download the db on startup or not")
+                .short('d')
+                .long("download")
+                .default_value("true")
+                .required_unless_present("license-file")
                 .required_unless_present("license"),
             Arg::new("address")
                 .help("sets the server address")
@@ -211,26 +223,32 @@ async fn main() -> std::io::Result<()> {
         ])
         .get_matches();
 
-    let license: String;
-    if matches.get_one::<String>("license").is_some() {
-        license = matches.get_one::<String>("license").unwrap().to_string();
-    } else {
-        let license_file: &String = matches.get_one("license-file").unwrap();
-        license = fs::read_to_string(license_file)?.trim().to_string();
+    let mut license: String = String::new();
+    let mut download: bool = false;
+    if matches.get_one::<String>("download").unwrap() == "true" {
+        download = true;
+        if matches.get_one::<String>("license").is_some() {
+            license = matches.get_one::<String>("license").unwrap().to_string();
+        } else {
+            let license_file: &String = matches.get_one("license-file").unwrap();
+            license = fs::read_to_string(license_file)?.trim().to_string();
+        }
     }
     let address: &String = matches.get_one("address").unwrap();
     let port: &String = matches.get_one("port").unwrap();
-    info!("Downloading the DB");
-    let result = download(&license).await;
-    if let Err(e) = result {
-        error!(error = e.to_string(), "error while downloading the db");
-        return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
-    }
-    info!("extracting the archive");
-    let result = extract().await;
-    if let Err(e) = result {
-        error!(error = e.to_string(), "error while extracting the archive");
-        return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
+    if download {
+        info!("Downloading the DB");
+        let result = download_db(&license).await;
+        if let Err(e) = result {
+            error!(error = e.to_string(), "error while downloading the db");
+            return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
+        }
+        info!("extracting the archive");
+        let result = extract().await;
+        if let Err(e) = result {
+            error!(error = e.to_string(), "error while extracting the archive");
+            return Err(std::io::Error::new(ErrorKind::Other, e.to_string()));
+        }
     }
     let reader = maxminddb::Reader::open_readfile("GeoLite2-City.mmdb").unwrap();
     let r = Arc::new(reader);
@@ -248,7 +266,7 @@ fn error_factory(e: String) -> ResponseError {
     ResponseError { error: e }
 }
 
-async fn download(license: &str) -> Result<()> {
+async fn download_db(license: &str) -> Result<()> {
     let url = &format!("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={}&suffix=tar.gz", license);
     const CHUNK_SIZE: u32 = 10485760;
     let client = reqwest::Client::builder().build()?;

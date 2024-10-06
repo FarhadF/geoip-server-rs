@@ -29,12 +29,14 @@ curl localhost:8080/health-check
 ## Usage:
 
 ```
-Usage: geoip-server-rs --license <Value> --address <Value> --port <Value>
+Usage: geoip-server-rs [OPTIONS]
 
 Options:
-  -l, --license <Value>  sets the maxmind license key
-  -a, --address <Value>  sets the server address
-  -p, --port <Value>     sets the server port
-  -h, --help             Print help
-  -V, --version          Print version
+  -l, --license <license>            sets the maxmind license key
+  -f, --license-file <license-file>  sets the maxmind license key from a file
+  -d, --download <download>          whether to download the db on startup or not [default: true]
+  -a, --address <address>            sets the server address [default: 0.0.0.0]
+  -p, --port <port>                  sets the server port [default: 8080]
+  -h, --help                         Print help
+  -V, --version                      Print version
 ```
